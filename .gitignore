@@ -2,4 +2,4 @@
 *.exe
 glibc-*
 *.out
-
+bin/
