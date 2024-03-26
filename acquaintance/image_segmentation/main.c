@@ -10,6 +10,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 typedef struct {
     size_t num_pixels;
     size_t sum;
@@ -52,7 +55,7 @@ int main(int argc, char *argv[argc]) {
         usage(argv[0]);
     }
 
-    printf("image filesize: %zu KiB\n", buf.st_size / 1024);
+    printf("image filesize: %lld KiB\n", buf.st_size / 1024);
     printf("IMAGE LOADED: (%d x %d)\n", x, y);
 
     size_t image_size = x * y;
@@ -64,7 +67,7 @@ int main(int argc, char *argv[argc]) {
     Stat *image_stats = mcs_make_array(x * y, sizeof(Stat));
     calculate_stats(image_size, data, image_roots, image_stats);
 
-    for (bool changed = false; changed; changed = false) {
+    for (bool changed = true; changed; changed = false) {
         for (int row = 0; row < y; ++row) {
             for (int col = 0; col < x; ++col) {
                 size_t idx = row * x + col;
@@ -72,11 +75,11 @@ int main(int argc, char *argv[argc]) {
                 if (col - 1 >= 0) {
                     size_t rl = uf_find_compress(image_roots, idx - 1);
                     if (rl != my_root && can_merge(image_size, image_stats, my_root, rl)) {
-                        printf("MERGING %zu and %zu\n", rl, my_root);
+                        // printf("MERGING %zu and %zu - %zu, %zu\n", rl, my_root, image_stats[rl].sum, image_stats[rl].num_pixels);
                         uf_union(image_roots, rl, my_root);
                         image_stats[rl].num_pixels += image_stats[my_root].num_pixels;
                         image_stats[rl].sum += image_stats[my_root].sum;
-                        image_stats[rl] = (Stat){};
+                        image_stats[my_root] = (Stat){};
                         my_root = rl;
                         changed = true;
                     }
@@ -85,7 +88,7 @@ int main(int argc, char *argv[argc]) {
                 if (row - 1 >= 0) {
                     size_t ru = uf_find_compress(image_roots, idx - x);
                     if (ru != my_root && can_merge(image_size, image_stats, my_root, ru)) {
-                        printf("MERGING %zu and %zu\n", ru, my_root);
+                        // printf("MERGING %zu and %zu - %zu, %zu\n", ru, my_root, image_stats[ru].sum, image_stats[ru].num_pixels);
                         uf_union(image_roots, ru, my_root);
                         image_stats[ru].num_pixels += image_stats[my_root].num_pixels;
                         image_stats[ru].sum += image_stats[my_root].sum;
@@ -99,7 +102,14 @@ int main(int argc, char *argv[argc]) {
         }
     }
 
-    // print_stats(image_stats, image_size);
+    print_stats(image_stats, image_size);
+    u8 *new_image = mcs_malloc(image_size);
+    for (size_t i = 0; i < image_size; ++i) {
+        size_t root = uf_find(image_roots, i);
+        new_image[i] = image_stats[root].sum / image_stats[root].num_pixels;
+    }
+
+    stbi_write_png("image_out.png", x, y, Grey, new_image, x);
 
     mcs_free(image_roots);
     mcs_free(image_stats);
@@ -154,7 +164,7 @@ void calculate_stats(size_t size, u8 image[static 1], size_t parents[static 1], 
 
 void print_stats(Stat stats[static 1], size_t size) {
     for (size_t i = 0; i < size; ++i) {
-        if (stats->num_pixels > 0) {
+        if (stats[i].num_pixels > 0) {
             printf("ROOT %zu: num_pixels: %zu, sum: %zu\n", i, stats[i].num_pixels, stats[i].sum);
         }
     }
@@ -167,7 +177,9 @@ bool can_merge(size_t image_size, Stat stats[static 1], size_t root_1, size_t ro
     ssize_t avg_val_1 = s1.sum / s1.num_pixels;
     ssize_t avg_val_2 = s2.sum / s2.num_pixels;
 
-    return labs(avg_val_1 - avg_val_2) <= 5;
+    // printf("%zu vs %zu: %zd vs %zd", root_1, root_2, avg_val_1, avg_val_2);
+
+    return labs(avg_val_1 - avg_val_2) <= 20;
 }
 
 void usage(char name[static 1]) {
