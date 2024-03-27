@@ -18,6 +18,12 @@ typedef struct {
     size_t sum;
 } Stat;
 
+typedef struct {
+    ssize_t merge_threshold;
+} Globals;
+
+Globals globals = {.merge_threshold = 5};
+
 void usage(char name[static 1]);
 size_t uf_find(size_t parents[static 1], size_t element);
 size_t uf_find_replace(size_t parents[static 1], size_t element, size_t replace);
@@ -36,10 +42,20 @@ enum STBI_REQ_IMAGE {
 };
 
 int main(int argc, char *argv[argc]) {
-
     if (argc != 2) {
         usage(argv[0]);
         return EXIT_FAILURE;
+    }
+    
+    char *env_val = getenv("MERGE_THRESHOLD");
+    if (env_val != NULL) {
+        ssize_t v = atol(env_val);
+        if (v > 0) {
+            globals.merge_threshold = v;
+        } else {
+            mcs_eprintfln("MERGE_THRESHOLD set but is invalid: %s", env_val);
+            mcs_eprintfln("Continuing with default value of %zd", globals.merge_threshold);
+        }
     }
 
     FILE *image = fopen(argv[1], "r");
@@ -55,7 +71,7 @@ int main(int argc, char *argv[argc]) {
         usage(argv[0]);
     }
 
-    printf("image filesize: %lld KiB\n", buf.st_size / 1024);
+    printf("image filesize: %zd KiB\n", buf.st_size / 1024);
     printf("IMAGE LOADED: (%d x %d)\n", x, y);
 
     size_t image_size = x * y;
@@ -102,14 +118,16 @@ int main(int argc, char *argv[argc]) {
         }
     }
 
-    print_stats(image_stats, image_size);
+    // print_stats(image_stats, image_size);
     u8 *new_image = mcs_malloc(image_size);
     for (size_t i = 0; i < image_size; ++i) {
         size_t root = uf_find(image_roots, i);
         new_image[i] = image_stats[root].sum / image_stats[root].num_pixels;
     }
 
+    printf("Merged with threshold= %zd\n", globals.merge_threshold);
     stbi_write_png("image_out.png", x, y, Grey, new_image, x);
+    printf("Successfully wrote file image_out.png\n");
 
     mcs_free(image_roots);
     mcs_free(image_stats);
@@ -179,10 +197,11 @@ bool can_merge(size_t image_size, Stat stats[static 1], size_t root_1, size_t ro
 
     // printf("%zu vs %zu: %zd vs %zd", root_1, root_2, avg_val_1, avg_val_2);
 
-    return labs(avg_val_1 - avg_val_2) <= 20;
+    return labs(avg_val_1 - avg_val_2) <= globals.merge_threshold;
 }
 
 void usage(char name[static 1]) {
     mcs_eprintfln("Usage: %s <image>", name);
     mcs_eprintfln("Takes an image and group connected regions");
+    mcs_eprintfln("Can change the merge threshold via environment variable MERGE_THRESHOLD");
 }
